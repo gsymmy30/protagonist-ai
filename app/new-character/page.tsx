@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import LogoutButton from "../logout";
+import heic2any from "heic2any";
 
 const TAGS = [
   "Charming", "Witty", "Bold", "Quiet", "Reckless", "Disciplined", "Loyal", "Cynical",
@@ -61,16 +62,51 @@ export default function NewCharacter() {
   }, [router]);
 
   // Handle image uploads & previews
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (files.length + images.length > 6) return setError("Max 6 images allowed.");
-    setImages(prev => [...prev, ...files]);
-    setImagePreviews(prev => [
-      ...prev,
-      ...files.map(f => URL.createObjectURL(f)),
-    ]);
+    if (files.length + images.length > 6) {
+      setError("Max 6 images allowed.");
+      return;
+    }
+  
+    const convertedFiles: File[] = [];
+    const previewUrls: string[] = [];
+  
+    for (const file of files) {
+      let finalFile = file;
+  
+      const isHEIC = file.type === "image/heic" || file.name.toLowerCase().endsWith(".heic");
+  
+      if (isHEIC) {
+        try {
+          // 🔥 Dynamic import only in browser
+          const heic2any = (await import("heic2any")).default;
+  
+          const convertedBlob = await heic2any({
+            blob: file,
+            toType: "image/jpeg",
+            quality: 0.9,
+          });
+  
+          finalFile = new File([convertedBlob as BlobPart], file.name.replace(/\.heic$/i, ".jpg"), {
+            type: "image/jpeg",
+          });
+        } catch (err) {
+          console.error("HEIC conversion failed:", err);
+          setError("Failed to convert HEIC image. Please try another one.");
+          continue; // skip this file
+        }
+      }
+  
+      convertedFiles.push(finalFile);
+      previewUrls.push(URL.createObjectURL(finalFile));
+    }
+  
+    setImages(prev => [...prev, ...convertedFiles]);
+    setImagePreviews(prev => [...prev, ...previewUrls]);
     setError("");
   };
+  
   const removeImage = (idx: number) => {
     setImages(prev => prev.filter((_, i) => i !== idx));
     setImagePreviews(prev => prev.filter((_, i) => i !== idx));
@@ -239,7 +275,7 @@ export default function NewCharacter() {
                       <label className="w-20 h-20 flex items-center justify-center bg-slate-800/60 rounded-lg cursor-pointer border-2 border-dashed border-slate-600 hover:border-fuchsia-500">
                         <input
                           type="file"
-                          accept="image/*"
+                          accept=".jpg,.jpeg,.png,.heic,image/heic,image/jpeg,image/png"
                           multiple
                           className="hidden"
                           onChange={handleImageChange}
